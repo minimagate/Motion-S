@@ -1,0 +1,131 @@
+{
+  "checkpoint": "artifacts/smoke/best.pt",
+  "checkpoint_epoch": 2,
+  "device": "cpu",
+  "latency": {
+    "constant_acceleration_ms": 0.007729166342566411,
+    "constant_velocity_ms": 0.006055567064322531,
+    "kalman_ms": 0.44201803296649206,
+    "neural_batch1_ms": 1.6845986004530762
+  },
+  "notes": {
+    "calibration": "moment-matched per-step ellipsoidal coverage at 50% and 90%",
+    "kalman": "process variance is fixed at 0.1; it was not tuned on test data",
+    "selection": "checkpoint selected only by validation NLL"
+  },
+  "parameters": 1178068,
+  "suites": {
+    "held_out_family": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 3.7628537369610524,
+          "fde": 9.632580844975159
+        },
+        "constant_velocity": {
+          "ade": 0.7029326516093639,
+          "fde": 1.4412246023342
+        },
+        "kalman": {
+          "ade": 0.8175892828937993,
+          "calibration_error": 0.6361979166666668,
+          "coverage_50": 0.037760416666666664,
+          "coverage_90": 0.08984374999999978,
+          "fde": 1.659799169337813
+        }
+      },
+      "neural": {
+        "ade": 0.9979859888553619,
+        "calibration_error": 0.11477864831686019,
+        "coverage_50": 0.7115885466337204,
+        "coverage_90": 0.91796875,
+        "fde": 2.1642865538597107,
+        "nll": 19.4529767036438,
+        "nll_per_coordinate": 0.8105406959851583
+      }
+    },
+    "in_distribution": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 4.721960001278917,
+          "fde": 12.180415606998213
+        },
+        "constant_velocity": {
+          "ade": 0.8336131931239739,
+          "fde": 1.6594438594964216
+        },
+        "kalman": {
+          "ade": 0.6587595516643867,
+          "calibration_error": 0.38408203125000095,
+          "coverage_50": 0.25000000000000283,
+          "coverage_90": 0.38183593749999534,
+          "fde": 1.2603991813706248
+        }
+      },
+      "neural": {
+        "ade": 0.7485119700431824,
+        "calibration_error": 0.1331705778837204,
+        "coverage_50": 0.728515625,
+        "coverage_90": 0.9378255307674408,
+        "fde": 1.4936557114124298,
+        "nll": 14.978365421295166,
+        "nll_per_coordinate": 0.624098559220632
+      }
+    },
+    "unseen_combinations": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 4.5884437796399675,
+          "fde": 11.791357570533732
+        },
+        "constant_velocity": {
+          "ade": 0.9510130501785814,
+          "fde": 1.8993526353890542
+        },
+        "kalman": {
+          "ade": 0.8026854678015217,
+          "calibration_error": 0.423795572916666,
+          "coverage_50": 0.23502604166666907,
+          "coverage_90": 0.317382812499999,
+          "fde": 1.541690065556117
+        }
+      },
+      "neural": {
+        "ade": 0.8737255781888962,
+        "calibration_error": 0.1452148362994194,
+        "coverage_50": 0.75,
+        "coverage_90": 0.9404296725988388,
+        "fde": 1.758361965417862,
+        "nll": 15.40680718421936,
+        "nll_per_coordinate": 0.6419502993424734
+      }
+    },
+    "unseen_parameters": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 12.481797700149563,
+          "fde": 31.994276003463824
+        },
+        "constant_velocity": {
+          "ade": 2.098711498182705,
+          "fde": 3.977805225176404
+        },
+        "kalman": {
+          "ade": 1.45169761322731,
+          "calibration_error": 0.501595052083332,
+          "coverage_50": 0.15820312500000022,
+          "coverage_90": 0.23860677083333584,
+          "fde": 2.4883908511040262
+        }
+      },
+      "neural": {
+        "ade": 1.4447790086269379,
+        "calibration_error": 0.14781902283430098,
+        "coverage_50": 0.7630208432674408,
+        "coverage_90": 0.9326172024011612,
+        "fde": 2.7271902561187744,
+        "nll": 32.44805097579956,
+        "nll_per_coordinate": 1.3520021239916484
+      }
+    }
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "checkpoint": "artifacts/initial/best.pt",
+  "checkpoint_epoch": 8,
+  "device": "cpu",
+  "latency": {
+    "constant_acceleration_ms": 0.008644433304046592,
+    "constant_velocity_ms": 0.006361100046585004,
+    "kalman_ms": 0.4568541665018226,
+    "neural_batch1_ms": 1.761619433333787
+  },
+  "notes": {
+    "calibration": "moment-matched per-step ellipsoidal coverage at 50% and 90%",
+    "kalman": "process variance is fixed at 0.1; it was not tuned on test data",
+    "selection": "checkpoint selected only by validation NLL"
+  },
+  "parameters": 1178068,
+  "suites": {
+    "held_out_family": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 4.022207469814415,
+          "fde": 10.302884151518619
+        },
+        "constant_velocity": {
+          "ade": 0.7399048350727985,
+          "fde": 1.519147246161345
+        },
+        "kalman": {
+          "ade": 0.8338986423910936,
+          "calibration_error": 0.6471028645833332,
+          "coverage_50": 0.02945963541666674,
+          "coverage_90": 0.0763346354166667,
+          "fde": 1.7035562437978014
+        }
+      },
+      "neural": {
+        "ade": 0.7242108583450317,
+        "calibration_error": 0.040494785457849514,
+        "coverage_50": 0.5382486954331398,
+        "coverage_90": 0.8572591245174408,
+        "fde": 1.5295589566230774,
+        "nll": 10.269617557525635,
+        "nll_per_coordinate": 0.4279007315635681
+      }
+    },
+    "in_distribution": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 5.261073067809134,
+          "fde": 13.509691755138041
+        },
+        "constant_velocity": {
+          "ade": 0.9540043889632801,
+          "fde": 1.8634146410895942
+        },
+        "kalman": {
+          "ade": 0.7395906453224877,
+          "calibration_error": 0.41801757812499984,
+          "coverage_50": 0.22412109374999578,
+          "coverage_90": 0.3398437500000045,
+          "fde": 1.3767376220929795
+        }
+      },
+      "neural": {
+        "ade": 0.6194898337125778,
+        "calibration_error": 0.10924478918313979,
+        "coverage_50": 0.69873046875,
+        "coverage_90": 0.9197591096162796,
+        "fde": 1.1559570729732513,
+        "nll": -1.8711048364639282,
+        "nll_per_coordinate": -0.07796270151933034
+      }
+    },
+    "unseen_combinations": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 5.00398402002505,
+          "fde": 12.849304513399888
+        },
+        "constant_velocity": {
+          "ade": 0.9794009011345159,
+          "fde": 1.930600238552114
+        },
+        "kalman": {
+          "ade": 0.8344728104556904,
+          "calibration_error": 0.4383626302083352,
+          "coverage_50": 0.220214843749996,
+          "coverage_90": 0.30305989583333365,
+          "fde": 1.5398238138596638
+        }
+      },
+      "neural": {
+        "ade": 0.6890600621700287,
+        "calibration_error": 0.10761718749999999,
+        "coverage_50": 0.705078125,
+        "coverage_90": 0.91015625,
+        "fde": 1.2983756065368652,
+        "nll": -1.8166860342025757,
+        "nll_per_coordinate": -0.07569525142510732
+      }
+    },
+    "unseen_parameters": {
+      "baselines": {
+        "constant_acceleration": {
+          "ade": 12.671431689450326,
+          "fde": 32.41047224417208
+        },
+        "constant_velocity": {
+          "ade": 2.1115894825298036,
+          "fde": 3.9644216059290227
+        },
+        "kalman": {
+          "ade": 1.4512829532494584,
+          "calibration_error": 0.5086751302083357,
+          "coverage_50": 0.15397135416666644,
+          "coverage_90": 0.2286783854166622,
+          "fde": 2.496049808913231
+        }
+      },
+      "neural": {
+        "ade": 1.0901539325714111,
+        "calibration_error": 0.1417154997587204,
+        "coverage_50": 0.7412109375,
+        "coverage_90": 0.9422200620174408,
+        "fde": 1.945900559425354,
+        "nll": 14.178218126296997,
+        "nll_per_coordinate": 0.5907590885957082
+      }
+    }
+  }
+}

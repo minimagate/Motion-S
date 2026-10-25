@@ -1,0 +1,12 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Keep the best research checkpoint and JSON metrics; the optimizer-identical
+# final-epoch copy is reproducible and need not be versioned.
+artifacts/*/last.pt
+

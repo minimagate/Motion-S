@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "motion-s"
+version = "0.1.0"
+description = "Tiny probabilistic spatial motion forecasting research baseline"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = {text = "MIT"}
+dependencies = [
+  "numpy>=1.26",
+  "torch>=2.2",
+]
+
+[project.optional-dependencies]
+viz = ["plotly>=5.20", "streamlit>=1.35"]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+motion-train = "motions.train:main"
+motion-eval = "motions.evaluate:main"
+motion-viz = "motions.visualize:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/motions"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
