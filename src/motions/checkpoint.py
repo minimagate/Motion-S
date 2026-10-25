@@ -35,6 +35,12 @@ def load_checkpoint(
     payload = torch.load(Path(path), map_location=device, weights_only=False)
     config = config_from_dict(payload["config"])
     model = build_model(config)
-    model.load_state_dict(payload["model_state"])
+    incompatible = model.load_state_dict(payload["model_state"], strict=False)
+    allowed_missing = {"future_time_projection.weight"}
+    if set(incompatible.missing_keys) - allowed_missing or incompatible.unexpected_keys:
+        raise RuntimeError(
+            f"incompatible checkpoint keys: missing={incompatible.missing_keys}, "
+            f"unexpected={incompatible.unexpected_keys}"
+        )
     model.to(device).eval()
     return model, config, payload

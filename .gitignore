@@ -9,4 +9,6 @@ __pycache__/
 # Keep the best research checkpoint and JSON metrics; the optimizer-identical
 # final-epoch copy is reproducible and need not be versioned.
 artifacts/*/last.pt
+artifacts/transfer/**/*.pt
+data/real/
 

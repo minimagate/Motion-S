@@ -1,0 +1,30 @@
+[data]
+dimension = 2
+min_observations = 8
+max_observations = 24
+horizon = 12
+train_samples = 4096
+val_samples = 512
+test_samples = 256
+dt_jitter = 0.35
+seed = 7
+
+[model]
+channels = 192
+blocks = 5
+kernel_size = 3
+dropout = 0.1
+mixtures = 3
+
+[train]
+batch_size = 128
+epochs = 6
+learning_rate = 0.0003
+weight_decay = 0.0001
+num_workers = 0
+patience = 3
+grad_clip = 1.0
+noise_loss_weight = 0.05
+device = "auto"
+output_dir = "artifacts/transfer"
+

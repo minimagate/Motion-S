@@ -17,6 +17,7 @@ class DataConfig:
     train_samples: int = 50_000
     val_samples: int = 2_000
     test_samples: int = 2_000
+    dt_jitter: float = 0.35
     seed: int = 7
 
 

@@ -23,7 +23,7 @@ class Forecast:
 
 
 class Forecaster:
-    """Small inference API around a trained Motion-S checkpoint."""
+    """Small inference API around a trained Kine-S checkpoint."""
 
     def __init__(self, checkpoint: str | Path, device: str = "auto") -> None:
         self.device = select_device(device)
@@ -36,6 +36,7 @@ class Forecaster:
         timestamps: Sequence[float] | np.ndarray,
         *,
         horizon: int | None = None,
+        future_timestamps: Sequence[float] | np.ndarray | None = None,
         num_samples: int = 0,
     ) -> Forecast:
         positions_array = np.asarray(positions, dtype=np.float32)
@@ -55,9 +56,18 @@ class Forecaster:
         positions_tensor = torch.as_tensor(positions_array, device=self.device)[None]
         times_tensor = torch.as_tensor(times_array, device=self.device)[None]
         mask = torch.ones_like(times_tensor, dtype=torch.bool)
-        distribution = self.model(positions_tensor, times_tensor, mask)
         cadence = float(np.median(np.diff(times_array)))
-        future_times = times_array[-1] + cadence * np.arange(1, requested_horizon + 1)
+        if future_timestamps is None:
+            future_times = times_array[-1] + cadence * np.arange(1, requested_horizon + 1)
+        else:
+            future_times = np.asarray(future_timestamps, dtype=np.float32)
+            if future_times.shape != (requested_horizon,) or np.any(
+                future_times <= times_array[-1]
+            ):
+                raise ValueError("future_timestamps must match the horizon and follow observations")
+        future_times = np.asarray(future_times, dtype=np.float32)
+        future_tensor = torch.as_tensor(future_times, device=self.device)[None]
+        distribution = self.model(positions_tensor, times_tensor, mask, future_tensor)
         draws = distribution.sample(num_samples)[0].cpu().numpy() if num_samples else None
         return Forecast(
             timestamps=future_times,

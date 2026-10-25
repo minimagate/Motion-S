@@ -39,19 +39,29 @@ def _move(batch: dict[str, object], device: torch.device) -> dict[str, object]:
 def validate(model, loader: DataLoader, device: torch.device) -> dict[str, float]:
     model.eval()
     total_nll = total_ade = total_fde = total_noise_mae = 0.0
-    total = 0
+    total = noise_count = 0
     for raw in loader:
         batch = _move(raw, device)
-        distribution = model(batch["observed"], batch["timestamps"], batch["mask"])
+        distribution = model(
+            batch["observed"],
+            batch["timestamps"],
+            batch["mask"],
+            batch["future_timestamps"],
+        )
         target = batch["future"]
         count = target.shape[0]
         errors = torch.linalg.vector_norm(distribution.mean - target, dim=-1)
         total_nll += float(distribution.nll(target)) * count
         total_ade += float(errors.mean()) * count
         total_fde += float(errors[:, -1].mean()) * count
-        total_noise_mae += (
-            float((distribution.measurement_noise_std - batch["noise_std"]).abs().mean()) * count
-        )
+        known_noise = torch.isfinite(batch["noise_std"])
+        if known_noise.any():
+            total_noise_mae += float(
+                (distribution.measurement_noise_std[known_noise] - batch["noise_std"][known_noise])
+                .abs()
+                .sum()
+            )
+            noise_count += int(known_noise.sum())
         total += count
     if not total:
         raise ValueError("validation loader is empty")
@@ -59,7 +69,7 @@ def validate(model, loader: DataLoader, device: torch.device) -> dict[str, float
         "nll": total_nll / total,
         "ade": total_ade / total,
         "fde": total_fde / total,
-        "noise_mae": total_noise_mae / total,
+        "noise_mae": total_noise_mae / noise_count if noise_count else float("nan"),
     }
 
 
@@ -74,6 +84,7 @@ def train(config: ExperimentConfig) -> dict[str, object]:
         dim=config.data.dimension,
         obs_length=(config.data.min_observations, config.data.max_observations),
         horizon=config.data.horizon,
+        dt_jitter=config.data.dt_jitter,
         profile=RESEARCH_PROFILE,
     )
     train_loader = _loader(splits["train"], config, shuffle=True)
@@ -97,11 +108,19 @@ def train(config: ExperimentConfig) -> dict[str, object]:
         for raw in train_loader:
             batch = _move(raw, device)
             optimizer.zero_grad(set_to_none=True)
-            distribution = model(batch["observed"], batch["timestamps"], batch["mask"])
-            noise_loss = torch.nn.functional.mse_loss(
-                distribution.measurement_noise_std.clamp_min(1e-4).log(),
-                batch["noise_std"].clamp_min(1e-4).log(),
+            distribution = model(
+                batch["observed"],
+                batch["timestamps"],
+                batch["mask"],
+                batch["future_timestamps"],
             )
+            known_noise = torch.isfinite(batch["noise_std"])
+            noise_loss = torch.zeros((), device=device)
+            if known_noise.any():
+                noise_loss = torch.nn.functional.mse_loss(
+                    distribution.measurement_noise_std[known_noise].clamp_min(1e-4).log(),
+                    batch["noise_std"][known_noise].clamp_min(1e-4).log(),
+                )
             loss = distribution.nll(batch["future"]) + config.train.noise_loss_weight * noise_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.train.grad_clip)
@@ -159,7 +178,7 @@ def train(config: ExperimentConfig) -> dict[str, object]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train the Motion-S probabilistic TCN")
+    parser = argparse.ArgumentParser(description="Train the Kine-S probabilistic TCN")
     parser.add_argument("--config", default="configs/base.toml")
     args = parser.parse_args()
     train(load_config(args.config))

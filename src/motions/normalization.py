@@ -108,7 +108,13 @@ def normalize_trajectory(
 
     local = (positions - origin) @ rotation
     distances = local.norm(dim=-1).masked_fill(~mask, 0)
-    scale = (distances.sum(dim=1) / mask.sum(dim=1).clamp_min(1)).clamp_min(eps)
+    scale = distances.sum(dim=1) / mask.sum(dim=1).clamp_min(1)
+    # A perfectly stationary history has no observable spatial scale. Dividing
+    # by epsilon turns any later motion into enormous normalized targets and
+    # makes likelihoods numerically meaningless. Use a neutral unit scale only
+    # in this unidentifiable case; non-degenerate histories retain exact scale
+    # equivariance.
+    scale = torch.where(scale > eps, scale, torch.ones_like(scale))
     local = local / scale[:, None, None]
     local = local.masked_fill(~mask[..., None], 0)
 

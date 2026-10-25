@@ -53,3 +53,23 @@ def test_padding_does_not_change_forecast():
     first = model(positions[1:2, :6], times[1:2, :6], mask[1:2, :6])
     second = model(positions[1:2], times[1:2], mask[1:2])
     assert torch.allclose(first.means, second.means, atol=1e-5)
+
+
+def test_future_schedule_conditions_forecast():
+    positions, times, mask = _batch(2)
+    model = TrajectoryTCN(horizon=2, components=2, width=32, depth=2, dropout=0)
+    with torch.no_grad():
+        model.future_time_projection.weight.fill_(0.1)
+    near = torch.tensor([[1.9, 2.0]]).expand(3, 2)
+    far = torch.tensor([[3.0, 4.0]]).expand(3, 2)
+    near_forecast = model(positions, times, mask, near).means
+    far_forecast = model(positions, times, mask, far).means
+    assert not torch.allclose(near_forecast, far_forecast)
+
+
+def test_stationary_history_uses_finite_neutral_scale():
+    positions = torch.zeros(2, 8, 2)
+    times = torch.arange(8, dtype=torch.float32).expand(2, 8) * 0.4
+    mask = torch.ones(2, 8, dtype=torch.bool)
+    _, _, transform = normalize_trajectory(positions, times, mask)
+    assert torch.equal(transform.scale[:, 0, 0], torch.ones(2))

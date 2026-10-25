@@ -21,6 +21,9 @@ Family = Literal[
     "ballistic",
     "stochastic",
     "goal-directed",
+    "piecewise",
+    "spiral",
+    "damped",
     "hybrid",
 ]
 FAMILIES: tuple[Family, ...] = (
@@ -31,6 +34,9 @@ FAMILIES: tuple[Family, ...] = (
     "ballistic",
     "stochastic",
     "goal-directed",
+    "piecewise",
+    "spiral",
+    "damped",
     "hybrid",
 )
 SplitName = Literal["train", "val", "test"]
@@ -94,18 +100,19 @@ def _trajectory(
     family: Family,
     *,
     dim: int,
-    steps: int,
-    dt: float,
+    timestamps: torch.Tensor,
     speed: float,
     acceleration: float,
     scale: float,
     generator: torch.Generator,
 ) -> torch.Tensor:
-    """Return a clean (steps, dim) trajectory, including its initial point."""
+    """Return a clean trajectory evaluated at arbitrary increasing timestamps."""
+    steps = len(timestamps)
     origin = torch.randn(dim, generator=generator) * (0.5 * scale)
     direction = _unit(generator, dim)
     side = _unit(generator, dim)
-    t = torch.arange(steps, dtype=torch.float32) * dt
+    t = timestamps
+    intervals = torch.diff(t)
     phase = float(torch.rand((), generator=generator) * (2 * torch.pi))
 
     if family == "linear":
@@ -138,15 +145,51 @@ def _trajectory(
         )
         p = origin
         points = [p]
-        for _ in range(steps - 1):
+        for dt_step in intervals:
             delta = goal - p
-            p = p + (delta / delta.norm().clamp_min(1e-8)) * speed * dt
+            step = min(float(delta.norm()), speed * float(dt_step))
+            p = p + (delta / delta.norm().clamp_min(1e-8)) * step
             points.append(p)
         pos = torch.stack(points)
     elif family == "stochastic":
-        increments = torch.randn((steps - 1, dim), generator=generator) * (speed * dt)
-        increments += direction * (speed * dt * 0.35)
+        increments = torch.randn((steps - 1, dim), generator=generator) * (
+            speed * intervals.sqrt()[:, None]
+        )
+        increments += direction * (speed * intervals[:, None] * 0.35)
         pos = torch.cat((origin[None], origin[None] + increments.cumsum(0)), dim=0)
+    elif family == "piecewise":
+        directions = [direction]
+        for _ in range(2):
+            candidate = _unit(generator, dim)
+            directions.append(
+                (directions[-1] + candidate)
+                .div(2)
+                .div((directions[-1] + candidate).div(2).norm().clamp_min(1e-8))
+            )
+        change_points = {max(1, steps // 3), max(2, 2 * steps // 3)}
+        current = 0
+        increments = []
+        for index, dt_step in enumerate(intervals, start=1):
+            if index in change_points:
+                current = min(current + 1, len(directions) - 1)
+            increments.append(directions[current] * speed * dt_step)
+        pos = torch.cat((origin[None], origin[None] + torch.stack(increments).cumsum(0)), dim=0)
+    elif family == "spiral":
+        u = direction
+        v = side - torch.dot(side, u) * u
+        v = v / v.norm().clamp_min(1e-8)
+        radius = scale * (0.2 + 0.15 * t)
+        angle = phase + speed * t / max(scale, 1e-5)
+        pos = origin + radius[:, None] * (
+            torch.cos(angle)[:, None] * u + torch.sin(angle)[:, None] * v
+        )
+    elif family == "damped":
+        amplitude = scale * (0.3 + float(torch.rand((), generator=generator)) * 0.5)
+        damping = 0.1 + float(torch.rand((), generator=generator)) * 0.5
+        pos = origin + (0.4 * speed * t)[:, None] * direction
+        pos += (amplitude * torch.exp(-damping * t) * torch.sin((1.0 + speed) * t + phase))[
+            :, None
+        ] * side
     elif family == "hybrid":
         bend = max(1, steps // 2)
         pos = origin + (t * speed)[:, None] * direction
@@ -179,6 +222,7 @@ class TrajectoryDataset(Dataset[dict[str, object]]):
         horizon: int = 12,
         dt: float | tuple[float, float] = (0.05, 0.2),
         noise_std: float | tuple[float, float] = (0.0, 0.08),
+        dt_jitter: float = 0.35,
         families: Iterable[Family] = FAMILIES,
         profile: str | SplitProfile = "standard",
     ) -> None:
@@ -196,9 +240,15 @@ class TrajectoryDataset(Dataset[dict[str, object]]):
         self.obs_length = self._range(obs_length, "obs_length", integer=True)
         self.dt = self._range(dt, "dt")
         self.noise_range = self._range(noise_std, "noise_std")
-        if self.obs_length[0] < 1 or self.dt[0] <= 0 or self.noise_range[0] < 0:
+        self.dt_jitter = float(dt_jitter)
+        if (
+            self.obs_length[0] < 1
+            or self.dt[0] <= 0
+            or self.noise_range[0] < 0
+            or not 0 <= self.dt_jitter <= 1
+        ):
             raise ValueError(
-                "observation length and dt must be positive; noise_std must be nonnegative"
+                "observation length/dt must be positive, noise nonnegative, and jitter in [0,1]"
             )
         self.profile = get_split_profile(profile)
         supplied = tuple(families)
@@ -259,19 +309,26 @@ class TrajectoryDataset(Dataset[dict[str, object]]):
             accel_range[1] - accel_range[0]
         )
         scale = 0.5 + float(torch.rand((), generator=g)) * 2.0
+        steps = obs_n + self.horizon
+        factors = 1 + self.dt_jitter * (2 * torch.rand(steps - 1, generator=g) - 1)
+        # Sparse longer gaps emulate dropped or delayed measurements while
+        # preserving a strictly increasing clock.
+        gap_mask = torch.rand(steps - 1, generator=g) < 0.05
+        gap_factor = 1.5 + 1.5 * torch.rand(steps - 1, generator=g)
+        intervals = dt * factors * torch.where(gap_mask, gap_factor, torch.ones_like(gap_factor))
+        all_timestamps = torch.cat((torch.zeros(1), intervals.cumsum(0))).to(torch.float32)
         clean = _trajectory(
             family,
             dim=self.dim,
-            steps=obs_n + self.horizon,
-            dt=dt,
+            timestamps=all_timestamps,
             speed=speed,
             acceleration=accel,
             scale=scale,
             generator=g,
         )
         observed = clean[:obs_n] + torch.randn((obs_n, self.dim), generator=g) * noise
-        timestamps = torch.arange(obs_n, dtype=torch.float32) * dt
-        future_timestamps = torch.arange(obs_n, obs_n + self.horizon, dtype=torch.float32) * dt
+        timestamps = all_timestamps[:obs_n]
+        future_timestamps = all_timestamps[obs_n:]
         return {
             "timestamps": timestamps,
             "future_timestamps": future_timestamps,
@@ -315,7 +372,7 @@ def collate_trajectories(items: list[dict[str, object]]) -> dict[str, object]:
     for index, (positions, times) in enumerate(zip(observed, timestamps)):
         padded_positions[index, : lengths[index]] = positions
         padded_times[index, : lengths[index]] = times
-    return {
+    batch = {
         "observed": padded_positions,
         "timestamps": padded_times,
         "mask": mask,
@@ -324,6 +381,10 @@ def collate_trajectories(items: list[dict[str, object]]) -> dict[str, object]:
         "noise_std": torch.stack([item["noise_std"] for item in items]),
         "family": [item["family"] for item in items],
     }
+    for key in ("track_id", "scene"):
+        if key in items[0]:
+            batch[key] = [item[key] for item in items]
+    return batch
 
 
 __all__ = [

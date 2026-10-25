@@ -11,7 +11,7 @@ class BaselineTests(unittest.TestCase):
 
     def test_acceleration_and_short_history(self):
         result = constant_acceleration([[0], [1], [4]], [0, 1, 2], [3])
-        self.assertAlmostEqual(result[0][0], 8.0)
+        self.assertAlmostEqual(result[0][0], 9.0)
         self.assertEqual(constant_acceleration([[1, 2]], [0], [1]), [[1.0, 2.0]])
 
     def test_3d_kalman_covariance(self):

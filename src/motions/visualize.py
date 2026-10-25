@@ -122,7 +122,7 @@ def trajectory_figure(
         )
         figure.update_scenes(aspectmode="data")
     figure.update_layout(
-        template="plotly_white", title="Motion-S probabilistic forecast", hovermode="closest"
+        template="plotly_white", title="Kine-S probabilistic forecast", hovermode="closest"
     )
     return figure
 
@@ -130,8 +130,8 @@ def trajectory_figure(
 def run_app(checkpoint: str) -> None:
     import streamlit as st
 
-    st.set_page_config(page_title="Motion-S", layout="wide")
-    st.title("Motion-S forecast inspector")
+    st.set_page_config(page_title="Kine-S", layout="wide")
+    st.title("Kine-S forecast inspector")
     forecaster = Forecaster(checkpoint)
     family = st.selectbox("Synthetic motion family", FAMILIES)
     seed = st.number_input("Trajectory seed", min_value=0, value=0, step=1)
@@ -161,7 +161,7 @@ def run_app(checkpoint: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Launch the Motion-S interactive forecast viewer")
+    parser = argparse.ArgumentParser(description="Launch the Kine-S interactive forecast viewer")
     parser.add_argument("--checkpoint", required=True)
     args = parser.parse_args()
     app = Path(__file__).with_name("visualize_app.py")

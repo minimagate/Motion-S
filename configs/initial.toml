@@ -6,6 +6,7 @@ horizon = 12
 train_samples = 8192
 val_samples = 1024
 test_samples = 512
+dt_jitter = 0.35
 seed = 7
 
 [model]

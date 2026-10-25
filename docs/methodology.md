@@ -1,97 +1,82 @@
-# Methodology and limitations
+# Audited methodology
 
-## Architecture
+## Model and data
 
-The default encoder is a stack of dilated residual causal 1D convolutions with per-time-step layer
-normalization. The initial experiment uses width 192, five residual blocks, kernel size 3, and
-three mixture components. The head emits a joint future trajectory per component, not independent
-mixtures at every time step, so sampled paths remain mode-consistent across the horizon.
+Kine-S is unchanged in scale: a 1,180,372-parameter causal TCN with width 192, five residual
+blocks, and three trajectory-level diagonal Gaussian components. A zero-initialized projection of
+the requested future sampling schedule was added so irregular future timestamps are explicit rather
+than silently treated as uniform. The encoder interface remains replaceable by a Transformer.
 
-The `CausalTCNEncoder` contract is deliberately small: `[batch, time, features]` plus a padding mask
-maps to `[batch, time, hidden]`. A causal Transformer encoder can implement that contract while
-reusing all preprocessing, likelihood, checkpoint, training, and evaluation code.
+Synthetic examples are generated lazily from stable per-item seeds. Eleven families cover linear,
+accelerated, circular, oscillatory, ballistic, stochastic, goal-directed, piecewise, spiral,
+damped, and hybrid motion. Each example randomizes physical parameters, orientation, origin, scale,
+sampling cadence, interval jitter, occasional gaps, and measurement noise. The hybrid family and
+joint parameter regimes remain available as synthetic out-of-distribution suites.
 
-## Normalization
+The real-data loader supports the official ETH Walking Pedestrians ETH and Hotel annotations. It
+converts ground-plane coordinates to metres and frame numbers to seconds, splits complete actor
+tracks 60/20/20 within each scene, and only then creates 8-observation/12-future windows. Gaps over
+0.6 seconds break a track segment. The split seed is fixed at 2026.
 
-The final valid observation is translated to the origin. The most recent displacement defines the
-local forward axis; degenerate histories fall back to the identity frame. Mean history distance
-from the endpoint supplies an isotropic spatial scale, and observed time span supplies time scale.
-The likelihood includes the spatial change-of-variables Jacobian when evaluated in world units.
+## Leakage and fairness audit
 
-This provides exact translation equivariance and analytic rotation/scale canonicalization. It does
-not guarantee learned invariance: noise, short histories, and nearly stationary endpoints can make
-the estimated frame unstable.
+The audit found and repaired these material issues:
 
-## Data and leakage controls
+1. **Degenerate normalization:** an exactly stationary observed history used the numerical epsilon
+   as spatial scale, turning ordinary future motion into normalized coordinates above 200,000.
+   Histories with unidentifiable scale now use a neutral unit scale; nondegenerate rotation and scale
+   equivariance are unchanged.
+2. **Oracle Kalman noise:** the earlier synthetic evaluator supplied each test example's generator
+   noise to the Kalman filter. Evaluation now uses one globally validation-tuned measurement
+   variance and process variance.
+3. **Weak baselines:** velocity and acceleration previously used only the latest finite differences.
+   They now fit validation-tuned local polynomial regressions. Window, ridge, Kalman measurement
+   variance, and Kalman acceleration variance are selected solely by validation ADE.
+4. **Window leakage risk:** real windows are never split independently. Actor identities are
+   disjoint across train, validation, and test, and overlapping windows stay within one split.
+5. **Unfair update counts:** epoch-based low-data comparisons gave smaller subsets fewer optimizer
+   updates. Pretrained models now receive 60 updates at every data budget. Scratch controls receive
+   240 updates, making the compute allocation conservative against pretraining. All checkpoints are
+   considered every 10 steps and selected by validation NLL only.
 
-Every dataset item owns a stable seed derived from `(base seed, split, index)`. The item generates a
-single complete history and future, so windows from one latent trajectory cannot cross splits.
-Validation and test use different seed namespaces; the final evaluation additionally offsets the
-base seed from training.
+No preprocessing statistics are fitted globally: translation, rotation, spatial scale, and time
+scale are derived only from each observed history. Targets and test data never affect the transform.
+The fixed actor split includes both scenes in every partition, so it measures transfer to unseen
+actors, not leave-scene-out or cross-dataset generalization.
 
-Fitting excludes the hybrid family. It also includes high-speed/low-noise and
-low-speed/high-noise regimes but withholds their high/high and low/low pairings. The suites are:
+## Statistical protocol
 
-- **In distribution:** new seeds, known seven families, fitted joint parameter regimes.
-- **Unseen parameters:** disjoint high speed and acceleration ranges.
-- **Unseen combinations:** known marginal speed/noise regimes in withheld pairings.
-- **Held-out family:** hybrid piecewise accelerated/oscillatory motion only.
+Neural summaries use five complete synthetic-pretraining and downstream-training seeds
+`7, 17, 27, 37, 47`. Reported 95% intervals are Student-t intervals across those five runs. The
+pretraining gain is paired by seed before computing its interval. Within any one real test run,
+ADE/FDE intervals resample complete actors (2,000 deterministic cluster-bootstrap replicates), not
+overlapping windows. Deterministic classical baselines therefore report actor-bootstrap intervals.
 
-The generator randomizes origin, direction, spatial scale, cadence, velocity, acceleration, phase,
-and measurement noise. Cadence is fixed within a trajectory; truly irregular sampling is accepted
-by the model and baselines but is not yet represented during synthetic training.
+The data budgets are nested deterministic subsets of 16, 64, and all 228 eligible training actors.
+Validation contains 82 eligible actors/260 windows and test contains 83 actors/204 windows. Baseline
+tuning examines at most 256 validation windows. The test split is evaluated only after selection.
 
-## Uncertainty
+## Uncertainty semantics
 
-Three outputs should not be conflated:
+Mixture-component separation represents alternative future paths; component scales represent
+within-mode residual uncertainty. A separate supervised scalar estimates synthetic measurement
+noise. These are conceptually distinct, but a single realized future per synthetic prefix remains
+weak supervision for genuine branching ambiguity.
 
-1. Separation among component means and their weights represents multimodal future ambiguity.
-2. Per-component diagonal scales represent residual within-mode future uncertainty.
-3. A scalar head estimates the observation measurement-noise standard deviation, supervised from
-   the generator. Its validation MAE was 0.0264 for noise sampled between 0 and 0.08 world units.
+Calibration is the average absolute error of empirical 50% and 90% moment-matched ellipsoidal
+coverage. It is useful as a coarse diagnostic, not a complete mixture-calibration test. On ETH the
+models are substantially over-dispersed: the full-data fine-tuned model averages 84.3% coverage for
+the nominal 50% region and 96.9% for the nominal 90% region.
 
-These quantities are identifiable only because synthetic training supplies a measurement-noise
-label. Within-mode variance still combines unmodeled dynamics and conditional process noise. A
-single realized future per history provides weak supervision for genuinely multimodal branching;
-explicit shared-prefix/multiple-future generation is the most important data improvement.
+## Remaining validity limits
 
-Calibration moment-matches the mixture at each future step and measures 50% and 90% ellipsoidal
-coverage. Moment matching can hide mode-specific miscalibration, and the reported scalar error uses
-only two coverage levels.
-
-## Baselines
-
-Constant velocity and acceleration use the latest irregular-time finite differences. The linear
-Kalman filter has position/velocity state, per-example measurement variance from the known
-synthetic noise level, and fixed white-acceleration process variance 0.1. No baseline hyperparameter
-was tuned on test sets. That favors methodological cleanliness but does not constitute a maximally
-competitive baseline study.
-
-## Largest remaining limitations
-
-- No real trajectory corpus is used, so simulator bias is unmeasured.
-- The eight named families are simple equations and one lightweight hybrid, not a compositional
-  physics engine with contacts, constraints, agents, or scene context.
-- Training uses fixed cadence per trajectory and a fixed number of future steps per checkpoint.
-- The 3D path is implemented and tested but the included trained checkpoint is 2D only.
-- A single training seed and architecture configuration provides no confidence intervals or ablation
-  evidence.
-- The TCN is evaluated against untuned baselines; stronger smoothing, robust polynomial fits,
-  interacting multiple models, and tuned Kalman variants may close or reverse gaps.
-- The observation-noise estimator assumes the synthetic noise model is isotropic Gaussian.
-- Batch-1 latency is a local CPU microbenchmark without thread-count or power controls.
-- The initial run is deliberately small and had not clearly plateaued at epoch 8, so it is an
-  engineering baseline rather than a converged scaling result.
-
-## Recommended next experiments
-
-1. Generate multiple futures from identical observed prefixes and score mode coverage explicitly.
-2. Add irregular sampling, missing observations, outliers, stops, collisions, and constrained motion.
-3. Run at least five seeds and report confidence intervals by family and forecast horizon.
-4. Tune classical baselines only on validation data and add robust polynomial and switching-Kalman
-   baselines.
-5. Train the 3D configuration and evaluate rotation/scale stress tests directly.
-6. Replace only `CausalTCNEncoder` with a parameter-matched Transformer for a controlled ablation.
-7. Fine-tune on a real, domain-specific corpus while retaining synthetic OOD suites as regression
-   tests.
-
+- ETH and Hotel are small pedestrian scenes from one corpus; scene context and interactions are
+  ignored, and both scenes appear in every split.
+- Five seeds leave wide intervals, especially at 16 actors.
+- Some full-data scratch runs select the last tested step, so 240 updates may not fully converge.
+- The synthetic generator has no contacts, obstacles, multi-agent coupling, missing detections, or
+  explicit shared-prefix/multiple-future supervision.
+- Fine-tuning selects NLL while the primary comparison is ADE; this is intentional for probabilistic
+  training but can rank checkpoints differently.
+- Moment-matched calibration can hide component-specific failures.
+- 3D support is implemented and tested, but this transfer study is 2D only.

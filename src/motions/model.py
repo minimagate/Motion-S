@@ -173,9 +173,17 @@ class TrajectoryTCN(nn.Module):
             nn.Linear(width, components * (2 * horizon * spatial_dim + 1)),
         )
         self.noise_head = nn.Linear(encoder_width, 1)
+        # Zero initialization preserves exact behavior for legacy checkpoints
+        # that did not condition on an explicit future sampling schedule.
+        self.future_time_projection = nn.Linear(horizon, encoder_width, bias=False)
+        nn.init.zeros_(self.future_time_projection.weight)
 
     def forward(
-        self, positions: torch.Tensor, timestamps: torch.Tensor, mask: torch.Tensor
+        self,
+        positions: torch.Tensor,
+        timestamps: torch.Tensor,
+        mask: torch.Tensor,
+        future_timestamps: torch.Tensor | None = None,
     ) -> TrajectoryDistribution:
         if positions.ndim != 3 or positions.shape[-1] != self.spatial_dim:
             raise ValueError(f"positions must have shape [B,T,{self.spatial_dim}]")
@@ -187,6 +195,16 @@ class TrajectoryTCN(nn.Module):
         idx = torch.arange(mask.shape[1], device=mask.device).expand_as(mask)
         last = idx.masked_fill(~mask, -1).max(dim=1).values
         context = states[torch.arange(states.shape[0], device=states.device), last]
+        if future_timestamps is None:
+            previous = (last - 1).clamp_min(0)
+            batch = torch.arange(states.shape[0], device=states.device)
+            cadence = (timestamps[batch, last] - timestamps[batch, previous]).clamp_min(1e-6)
+            steps = torch.arange(1, self.horizon + 1, device=states.device, dtype=timestamps.dtype)
+            future_timestamps = timestamps[batch, last, None] + cadence[:, None] * steps
+        if future_timestamps.shape != (positions.shape[0], self.horizon):
+            raise ValueError(f"future_timestamps must have shape [B,{self.horizon}]")
+        local_future_times = (future_timestamps - transform.time_origin) / transform.time_scale
+        context = context + self.future_time_projection(local_future_times)
         raw = self.head(context).view(-1, self.components, 2 * self.horizon * self.spatial_dim + 1)
         n = self.horizon * self.spatial_dim
         means_local = raw[..., :n].view(-1, self.components, self.horizon, self.spatial_dim)

@@ -45,3 +45,11 @@ def test_invalid_configuration_raises():
         TrajectoryDataset(1, dim=4)
     with pytest.raises(ValueError):
         TrajectoryDataset(1, noise_std=-1)
+
+
+def test_sampling_intervals_are_variable_and_increasing():
+    item = TrajectoryDataset(1, obs_length=12, horizon=8, dt_jitter=0.5, seed=23)[0]
+    timestamps = torch.cat((item["timestamps"], item["future_timestamps"]))
+    intervals = torch.diff(timestamps)
+    assert torch.all(intervals > 0)
+    assert intervals.std() > 0

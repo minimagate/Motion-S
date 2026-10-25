@@ -38,20 +38,27 @@ def _validate(
 
 
 def constant_velocity(
-    history: Matrix, timestamps: Sequence[float], future_timestamps: Sequence[float]
+    history: Matrix,
+    timestamps: Sequence[float],
+    future_timestamps: Sequence[float],
+    *,
+    window: int = 2,
+    ridge: float = 0.0,
 ) -> list[list[float]]:
-    """Extrapolate the last observed velocity; one point yields a stationary forecast."""
+    """Fit a linear trajectory over the latest validation-selected window."""
     points, times, future = _validate(history, timestamps, future_timestamps)
     if len(points) < 2:
-        velocity = [0.0] * len(points[0])
-    else:
-        dt = times[-1] - times[-2]
-        velocity = [(b - a) / dt for a, b in zip(points[-2], points[-1])]
-    return [[p + v * (t - times[-1]) for p, v in zip(points[-1], velocity)] for t in future]
+        return [points[-1][:] for _ in future]
+    return _polynomial_forecast(points, times, future, degree=1, window=window, ridge=ridge)
 
 
 def constant_acceleration(
-    history: Matrix, timestamps: Sequence[float], future_timestamps: Sequence[float]
+    history: Matrix,
+    timestamps: Sequence[float],
+    future_timestamps: Sequence[float],
+    *,
+    window: int = 3,
+    ridge: float = 0.0,
 ) -> list[list[float]]:
     """Quadratic extrapolation from the latest two interval velocities.
 
@@ -61,18 +68,7 @@ def constant_acceleration(
     points, times, future = _validate(history, timestamps, future_timestamps)
     if len(points) < 3:
         return constant_velocity(points, times, future)
-    dt0, dt1 = times[-2] - times[-3], times[-1] - times[-2]
-    velocity0 = [(b - a) / dt0 for a, b in zip(points[-3], points[-2])]
-    velocity1 = [(b - a) / dt1 for a, b in zip(points[-2], points[-1])]
-    # Centered difference between interval velocities, expressed per unit time.
-    acceleration = [(v1 - v0) / ((dt0 + dt1) / 2.0) for v0, v1 in zip(velocity0, velocity1)]
-    return [
-        [
-            p + v * (t - times[-1]) + 0.5 * a * (t - times[-1]) ** 2
-            for p, v, a in zip(points[-1], velocity1, acceleration)
-        ]
-        for t in future
-    ]
+    return _polynomial_forecast(points, times, future, degree=2, window=window, ridge=ridge)
 
 
 @dataclass(frozen=True)
@@ -115,6 +111,35 @@ def _inverse(a: list[list[float]]) -> list[list[float]]:
     return [row[n:] for row in aug]
 
 
+def _polynomial_forecast(
+    points: list[list[float]],
+    times: list[float],
+    future: list[float],
+    *,
+    degree: int,
+    window: int,
+    ridge: float,
+) -> list[list[float]]:
+    if window < degree + 1 or ridge < 0:
+        raise ValueError("window must identify the polynomial and ridge must be non-negative")
+    count = min(window, len(points))
+    points, times = points[-count:], times[-count:]
+    center = times[-1]
+    design = [[(time - center) ** power for power in range(degree + 1)] for time in times]
+    gram = _matmul(_transpose(design), design)
+    for index in range(1, degree + 1):
+        gram[index][index] += ridge
+    inverse = _inverse(gram)
+    coefficients = _matmul(_matmul(inverse, _transpose(design)), points)
+    return [
+        [
+            sum(coefficients[power][axis] * (time - center) ** power for power in range(degree + 1))
+            for axis in range(len(points[0]))
+        ]
+        for time in future
+    ]
+
+
 def linear_kalman_filter(
     history: Matrix,
     timestamps: Sequence[float],
@@ -138,8 +163,8 @@ def linear_kalman_filter(
     d = len(points[0])
     n = 2 * d
     if len(points) > 1:
-        dt = times[-1] - times[-2]
-        velocity = [(b - a) / dt for a, b in zip(points[-2], points[-1])]
+        dt = times[1] - times[0]
+        velocity = [(b - a) / dt for a, b in zip(points[0], points[1])]
     else:
         velocity = [0.0] * d
     # Start at the first measurement and assimilate the remaining history in
